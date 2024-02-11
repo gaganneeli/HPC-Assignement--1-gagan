@@ -1,111 +1,86 @@
-/* solving the N-Queens problem using OpenMP
-
-   usage with gcc (version 4.2 or higher required):
-     gcc -O -fopenmp -o nqueens-openmp nqueens-openmp.c
-     ./nqueens-openmp n numWorkers
-
-*/
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <time.h>
-#include <sys/time.h>
-
+#include <iostream>
+#include <vector>
+#include <fstream>
 #include <omp.h>
 
-#define MAX_N 16
+using namespace std;
 
-int check_acceptable(int queen_rows[MAX_N], int n)
-{
-	int i, j;
-	for (i = 0; i < n; i++)
-	{
-		for (j = i+1; j < n; j++)
-		{
-			// two queens in the same row => not a solution!
-			if (queen_rows[i] == queen_rows[j]) return 0;
-			
-			// two queens in the same diagonal => not a solution!
-			if (queen_rows[i] - queen_rows[j] == i - j ||
-			    queen_rows[i] - queen_rows[j] == j - i)
-			    return 0;
-		}
-	}
-
-	return 1;
-}
-
-int main(int argc, char* argv[])
-{
-    int n;
-    int max_iter = 1;
-    
-    double start_time, end_time;
-    int number_solutions = 0;
-        
-	{
-	    int num_workers;
-        int i;
-	
-        n = (argc > 1) ? atoi(argv[1]) : 8;
-        num_workers = (argc > 2) ? atoi(argv[2]) : 30;
-		printf("\n________________\n %d \n______________\n",num_workers);
-        
-        omp_set_num_threads(num_workers);
-	        
-        for (i = 0; i < n; i++)
-        {
-            max_iter *= n;
+bool isSafe(int row, int col, const vector<int>& placement) {
+    for (int i = 0; i < row; ++i) {
+        if (placement[i] == col || abs(i - row) == abs(placement[i] - col)) {
+            return false;
         }
     }
-  
-    start_time = omp_get_wtime();
-    
-	int iter;
-#pragma omp parallel for
-	for (iter = 0; iter < max_iter; iter++)
-	{
-		int code = iter;
-		int i;
-	    int queen_rows[MAX_N];
-		// the index correspond to the queen's number and the queen's collumn
-		// we only generate configurations where there's only one queen per collumn
-		for (i = 0; i < n; i++)
-		{
-			queen_rows[i] = code % n;
-			
-			code /= n;
-		}
-		
-		if (check_acceptable(queen_rows, n))
-		{
-#pragma omp atomic
-		    number_solutions++;
-		    
-#pragma omp critical
-            {
-			    printf("\n");
-			    for (i = 0; i < n; i++)
-			    {
-			        int j;
-				    for (j = 0; j < n; j++)
-				    {
-					    if (queen_rows[i] == j)	printf("|X");
-					    else printf("| ");
-				    }
-				    printf("|\n");
-			    }
-			    printf("\n");
-			}
-		}
-	}
+    return true;
+}
 
-    // get end time
-    end_time = omp_get_wtime();
-    // print results
-    printf("The execution time is %g sec\n", end_time - start_time);
-    printf("Number of found solutions is %d\n", number_solutions);
-    
-	return 0;
+void solveNQueens(int n, int row, vector<int>& placement, int& count, ofstream& outfile) {
+    if (row == n) {
+        #pragma omp critical
+        {
+            ++count; // Increment solution count
+
+            // Print the solution to file
+            for (int i = 0; i < n; ++i) {
+                for (int j = 0; j < n; ++j) {
+                    if (placement[i] == j) outfile << "Q ";
+                    else outfile << ". ";
+                }
+                outfile << endl;
+            }
+            outfile << endl;
+        }
+        return;
+    }
+
+    #pragma omp parallel for
+    for (int col = 0; col < n; ++col) {
+        if (isSafe(row, col, placement)) {
+            placement[row] = col;
+            solveNQueens(n, row + 1, placement, count, outfile);
+        }
+    }
+}
+
+int main() {
+    int n;
+    int num_threads;
+
+    cout << "Enter the size of the chessboard (n): ";
+    cin >> n;
+
+    cout << "Enter the number of threads: ";
+    cin >> num_threads;
+
+    if (n <= 0 || num_threads <= 0) {
+        cout << "Invalid input. Please enter positive values for n and number of threads.\n";
+        return 1;
+    }
+
+    vector<int> placement(n, 0);
+    int count = 0;
+
+    ofstream outfile("solutions.txt");
+    if (!outfile.is_open()) {
+        cout << "Failed to open file for writing solutions." << endl;
+        return 1;
+    }
+
+    double start_time = omp_get_wtime();
+
+    #pragma omp parallel num_threads(num_threads)
+    {
+        #pragma omp single
+        solveNQueens(n, 0, placement, count, outfile);
+    }
+
+    double end_time = omp_get_wtime();
+    double execution_time = end_time - start_time;
+
+    outfile.close();
+
+    cout << "Total number of solutions: " << count << endl;
+    cout << "Execution time: " << execution_time << " seconds" << endl;
+
+    return 0;
 }
